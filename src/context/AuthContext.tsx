@@ -1,78 +1,64 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import supabase from '@/lib/supabaseClient';
+"use client";
 
-// Define types for our context
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+// Note: We are NOT importing supabase here at the top level anymore.
+import type { Session, User, SupabaseClient } from '@supabase/supabase-js';
+
 type AuthContextType = {
   user: User | null;
   session: Session | null;
+  supabase: SupabaseClient | null; // We can also pass the client through context
   loading: boolean;
 };
 
-// Create the context with default values
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Props type for the AuthProvider component
-type AuthProviderProps = {
-  children: ReactNode;
-};
-
-/**
- * AuthProvider component to wrap the application and provide authentication state
- */
-export const AuthProvider = ({ children }: AuthProviderProps) => {
-  // State to track user, session, and loading status
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get the initial session when the component mounts
-    const getInitialSession = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error('Error getting initial session:', error);
+    // This function dynamically imports the supabase client
+    // and sets up the auth listener. This breaks the circular dependency.
+    const initializeAuth = async () => {
+      // THE FIX: Dynamically import supabase client inside useEffect
+      const { supabase: supabaseClient } = await import('@/lib/supabaseClient');
+      setSupabase(supabaseClient);
+
+      // Fetch the initial session
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+
+      // Listen for auth state changes
+      const { data: authListener } = supabaseClient.auth.onAuthStateChange(
+        (event, session) => {
+          setSession(session);
+          setUser(session?.user ?? null);
+          setLoading(false);
         }
-        
-        // Set initial state from the session
-        setSession(session);
-        setUser(session?.user ?? null);
-      } catch (error) {
-        console.error('Unexpected error during getSession:', error);
-      } finally {
-        // Mark loading as complete regardless of outcome
-        setLoading(false);
-      }
+      );
+
+      // Cleanup listener on component unmount
+      return () => {
+        authListener?.subscription.unsubscribe();
+      };
     };
 
-    // Call the function to get initial session
-    getInitialSession();
-
-    // Subscribe to auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-      }
-    );
-
-    // Clean up subscription when the component unmounts
-    return () => {
-      subscription.unsubscribe();
-    };
+    initializeAuth();
   }, []);
 
-  // Create the value object for the context
   const value = {
     user,
     session,
+    supabase,
     loading,
   };
 
-  // Only render children after the initial loading is complete
+  // Only render the application after the initial auth check is complete
   return (
     <AuthContext.Provider value={value}>
       {!loading && children}
@@ -80,16 +66,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   );
 };
 
-/**
- * Custom hook to use the auth context
- * This simplifies consuming the context in components
- */
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
-  
   return context;
 };
