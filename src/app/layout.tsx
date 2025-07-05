@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider } from '@/context/AuthContext';
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Cleaning Plan Generator",
-  description: "Create your personalized cleaning schedule",
+  title: "CleaningPlan - Your Smart Cleaning Assistant",
+  description: "Create personalized cleaning schedules and track your progress with our intelligent cleaning planner.",
 };
 
 export default function RootLayout({
@@ -16,9 +16,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // The fix is adding suppressHydrationWarning here
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className={inter.className} suppressHydrationWarning>
         <AuthProvider>
           {children}
         </AuthProvider>

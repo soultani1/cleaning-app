@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 
 // Import UI components and icons
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from '@/context/AuthContext';
 import AuthButton from '@/components/AuthButton';
-import { Home, PawPrint, ArrowRight, Plus, Clock, Calendar, Star, CheckCircle2, Circle, Trash2, ArrowLeft, Sparkles } from 'lucide-react';
+import { Home, PawPrint, ArrowRight, Plus, Clock, Calendar, Star, CheckCircle2, Circle, Trash2, ArrowLeft, Sparkles, Timer } from 'lucide-react';
+
+// Dynamic import للمؤقت مع حل مشكلة Hydration
+const TaskTimer = dynamic(() => import('@/components/task-timer'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center p-8">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <span className="ml-2 text-sm text-gray-600">Loading timer...</span>
+    </div>
+  )
+});
 
 // --- Type Definition ---
 type Task = {
@@ -26,8 +38,10 @@ type Task = {
   user_id?: string | null;
 };
 
-// --- Child Component: TaskItem ---
+// --- Child Component: TaskItem (الأصلي + المؤقت الإنجليزي) ---
 const TaskItem = ({ task, onToggle, onDelete }: { task: Task, onToggle: (id: number, status: boolean) => void, onDelete: (id: number) => void }) => {
+  const [showTimer, setShowTimer] = useState(false);
+
   const getFrequencyIcon = (frequency: string) => {
     switch (frequency.toLowerCase()) {
       case 'daily': return <Clock className="w-4 h-4 text-blue-600" />;
@@ -46,41 +60,79 @@ const TaskItem = ({ task, onToggle, onDelete }: { task: Task, onToggle: (id: num
     }
   };
 
+  // دالة إكمال المهمة عند انتهاء المؤقت
+  const handleTimerComplete = () => {
+    if (!task.is_completed) {
+      onToggle(task.id, task.is_completed);
+    }
+    setShowTimer(false);
+  };
+
   return (
-    <div className={`bg-white rounded-xl border ${task.is_completed ? 'border-gray-200 bg-gray-50' : 'border-gray-200'} hover:shadow-md transition-all duration-300 group`}>
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start space-x-3 flex-1 min-w-0">
-            <div className="mt-0.5 cursor-pointer" onClick={() => onToggle(task.id, task.is_completed)}>
-              {task.is_completed ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-500 transition-colors hover:text-emerald-600" />
-              ) : (
-                <Circle className="w-5 h-5 text-gray-400 transition-colors hover:text-gray-600" />
-              )}
-            </div>
-            <div className="flex-1">
-              <label className={`font-medium cursor-pointer transition-all block ${task.is_completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
-                {task.task_name}
-              </label>
-              <div className="flex items-center space-x-2 mt-1">
-                {getFrequencyIcon(task.frequency)}
-                <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${getFrequencyColor(task.frequency)}`}>
-                  {task.frequency}
-                </span>
+    <div className="space-y-4">
+      {/* المهمة الرئيسية */}
+      <div className={`bg-white rounded-xl border ${task.is_completed ? 'border-gray-200 bg-gray-50' : 'border-gray-200'} hover:shadow-md transition-all duration-300 group`}>
+        <div className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start space-x-3 flex-1 min-w-0">
+              <div className="mt-0.5 cursor-pointer" onClick={() => onToggle(task.id, task.is_completed)}>
+                {task.is_completed ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500 transition-colors hover:text-emerald-600" />
+                ) : (
+                  <Circle className="w-5 h-5 text-gray-400 transition-colors hover:text-gray-600" />
+                )}
+              </div>
+              <div className="flex-1">
+                <label className={`font-medium cursor-pointer transition-all block ${task.is_completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
+                  {task.task_name}
+                </label>
+                <div className="flex items-center justify-between mt-2">
+                  <div className="flex items-center space-x-2">
+                    {getFrequencyIcon(task.frequency)}
+                    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${getFrequencyColor(task.frequency)}`}>
+                      {task.frequency}
+                    </span>
+                  </div>
+                  
+                  {/* زر المؤقت - يظهر فقط للمهام غير المكتملة */}
+                  {!task.is_completed && (
+                    <button
+                      onClick={() => setShowTimer(!showTimer)}
+                      className={`flex items-center space-x-1 px-3 py-1 rounded-lg text-xs font-medium transition-all duration-200 ${
+                        showTimer 
+                          ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                          : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                      }`}
+                    >
+                      <Timer size={12} />
+                      <span>{showTimer ? 'Hide Timer' : 'Start Timer'}</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
+            <Button variant="ghost" size="icon" onClick={() => onDelete(task.id)} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-50 h-8 w-8">
+              <Trash2 size={16} className="text-red-500" />
+            </Button>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => onDelete(task.id)} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-50 h-8 w-8">
-            <Trash2 size={16} className="text-red-500" />
-          </Button>
         </div>
       </div>
+
+      {/* المؤقت - يظهر تحت المهمة مع animation جميل */}
+      {showTimer && !task.is_completed && (
+        <div className="ml-6 animate-in slide-in-from-top-4 duration-300 ease-out">
+          <TaskTimer 
+            taskName={task.task_name}
+            onComplete={handleTimerComplete}
+            className="max-w-sm mx-auto shadow-lg"
+          />
+        </div>
+      )}
     </div>
   );
 };
 
-
-// --- Parent Component: The Main Page ---
+// --- Parent Component: The Main Page (الأصلي) ---
 const CleaningPlanPage = () => {
   const { user } = useAuth();
   const router = useRouter();
@@ -207,9 +259,8 @@ const CleaningPlanPage = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* --- Header Section with Responsive Container --- */}
+      {/* --- Header Section الأصلي - بدون Dashboard --- */}
       <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-50">
-        {/* The 'container' class makes the content wider on larger screens */}
         <nav className="container mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-16">
             <Link href="/" className="flex items-center gap-2">
@@ -221,11 +272,10 @@ const CleaningPlanPage = () => {
         </nav>
       </header>
 
-      {/* --- Main Content Section --- */}
+      {/* باقي الكود كما هو... */}
       {currentScreen === 'selection' ? (
         <main className="flex items-center justify-center py-12 px-4">
           <div className="w-full max-w-md">
-            {/* Selection Form */}
             <div className="text-center mb-8">
               <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Let's Get Started</h1>
               <p className="text-gray-600">Tell us about your home to create your perfect cleaning plan.</p>
@@ -273,13 +323,13 @@ const CleaningPlanPage = () => {
             {Object.entries(displayedTasks).map(([category, tasks]) =>
               tasks.length > 0 && (
                 <div key={category}>
-                  <h3 className="text-lg font-semibold text-gray-900 capitalize mb-3 flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-gray-900 capitalize mb-4 flex items-center gap-2">
                     {category === 'daily' && <Clock className="w-5 h-5 text-blue-600" />}
                     {category === 'weekly' && <Calendar className="w-5 h-5 text-emerald-600" />}
                     {category === 'monthly' && <Star className="w-5 h-5 text-purple-600" />}
                     {category} Tasks
                   </h3>
-                  <div className="grid gap-3 sm:grid-cols-1 md:grid-cols-2">
+                  <div className="space-y-4">
                     {tasks.map((task) => <TaskItem key={task.id} task={task} onToggle={toggleTask} onDelete={deleteTask} />)}
                   </div>
                 </div>
