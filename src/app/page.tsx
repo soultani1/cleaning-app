@@ -259,20 +259,6 @@ const CleaningPlanPage = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* --- Header Section الأصلي - بدون Dashboard --- */}
-      <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-50">
-        <nav className="container mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/" className="flex items-center gap-2">
-              <Sparkles className="h-6 w-6 text-blue-600" />
-              <span className="font-bold text-lg text-gray-800">CleaningPlan</span>
-            </Link>
-            <AuthButton />
-          </div>
-        </nav>
-      </header>
-
-      {/* باقي الكود كما هو... */}
       {currentScreen === 'selection' ? (
         <main className="flex items-center justify-center py-12 px-4">
           <div className="w-full max-w-md">
