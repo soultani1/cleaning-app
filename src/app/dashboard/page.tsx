@@ -1,69 +1,141 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { 
-  Calendar, 
-  CheckCircle2, 
-  Clock, 
-  Target, 
-  TrendingUp, 
-  Star, 
-  Award, 
-  Flame,
-  BarChart3,
-  Home,
-  Users
-} from 'lucide-react';
+import React, { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import {
+  Calendar, BarChart3, Flame, Target, Star, Award,
+  Clock, CheckCircle2, Home, Users
+} from "lucide-react";
 
-// Mock data - later we'll fetch from Supabase
-const mockStats = {
-  todayTasks: { completed: 5, total: 8 },
-  weekTasks: { completed: 23, total: 35 },
-  monthTasks: { completed: 78, total: 120 },
-  streak: 7,
-  badges: [
-    { id: 1, title: "Clean Starter", description: "Completed your first task", icon: "🌟", earned: true },
-    { id: 2, title: "Week Warrior", description: "7 days cleaning streak", icon: "🔥", earned: true },
-    { id: 3, title: "Kitchen Master", description: "Completed 50 kitchen tasks", icon: "🍽️", earned: true },
-    { id: 4, title: "Monthly Hero", description: "100% monthly completion", icon: "🏆", earned: false },
-  ],
-  recentActivity: [
-    { task: "Clean kitchen counters", completed: "2 hours ago" },
-    { task: "Vacuum living room", completed: "4 hours ago" },
-    { task: "Organize closet", completed: "Yesterday" },
-  ],
-  weeklyProgress: [
-    { day: "Mon", completed: 6, total: 8 },
-    { day: "Tue", completed: 5, total: 7 },
-    { day: "Wed", completed: 8, total: 8 },
-    { day: "Thu", completed: 4, total: 6 },
-    { day: "Fri", completed: 7, total: 9 },
-    { day: "Sat", completed: 3, total: 5 },
-    { day: "Sun", completed: 2, total: 4 }
-  ]
-};
+// Supabase Client
+import { supabase } from "@/lib/supabaseClient";
+
+// (Ago)
+function timeAgo(date: string | Date) {
+  const now = new Date();
+  const past = new Date(date);
+  const diff = Math.floor((now.getTime() - past.getTime()) / 1000);
+  if (diff < 60) return `${diff} seconds ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
+  if (diff < 172800) return "Yesterday";
+  return past.toLocaleDateString();
+}
 
 export default function DashboardPage() {
+  const { user, loading } = useAuth();
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
+  const [isClient, setIsClient] = useState(false);
 
-  // Mock user - we'll replace this later with real auth
-  const mockUser = { email: "user@example.com" };
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
 
+  //  Hydration
+  useEffect(() => setIsClient(true), []);
   useEffect(() => {
-    // Simulate loading
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 1000);
+    if (isClient && !loading && !user) router.replace("/");
+  }, [isClient, user, loading, router]);
 
-    return () => clearTimeout(timer);
-  }, []);
+  //
+  useEffect(() => {
+    if (!user) return;
+    setTasksLoading(true);
+    supabase
+      .from("tasks")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (data) setTasks(data);
+        setTasksLoading(false);
+      });
+  }, [user]);
 
-  if (loading) {
+  // Categorize tasks by day/week/month
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const weekStart = new Date();
+  weekStart.setDate(today.getDate() - today.getDay()); // Sunday The beginning of the week
+  weekStart.setHours(0, 0, 0, 0);
+
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  const todayTasks = tasks.filter(t => new Date(t.created_at) >= today);
+  const weekTasks = tasks.filter(t => new Date(t.created_at) >= weekStart);
+  const monthTasks = tasks.filter(t => new Date(t.created_at) >= monthStart);
+
+  // streak (Daily Achievement Series)
+  const calcStreak = (allTasks: any[]) => {
+    if (allTasks.length === 0) return 0;
+    let streak = 0;
+    let prevDay = new Date();
+    prevDay.setHours(0,0,0,0);
+    for (let i = 0; i < 30; i++) {
+      const checkDay = new Date(prevDay);
+      checkDay.setDate(prevDay.getDate() - i);
+      const done = allTasks.some(t => {
+        const d = new Date(t.completed_at || t.updated_at || t.created_at);
+        return d.toDateString() === checkDay.toDateString() && t.is_completed;
+      });
+      if (done) streak++;
+      else break;
+    }
+    return streak;
+  };
+
+  const streak = useMemo(() => calcStreak(tasks), [tasks]);
+
+  // badges (model only, improve it according to your logic)Real
+  const badges = [
+    {
+      id: 1, title: "Clean Starter", description: "Completed your first task", icon: "🌟",
+      earned: tasks.some(t => t.is_completed)
+    },
+    {
+      id: 2, title: "Week Warrior", description: "7 days cleaning streak", icon: "🔥",
+      earned: streak >= 7
+    },
+    {
+      id: 3, title: "Kitchen Master", description: "Completed 50 kitchen tasks", icon: "🍽️",
+      earned: tasks.filter(t => t.is_completed && t.task_name?.toLowerCase().includes("kitchen")).length >= 50
+    },
+    {
+      id: 4, title: "Monthly Hero", description: "100% monthly completion", icon: "🏆",
+      earned: monthTasks.length > 0 && monthTasks.every(t => t.is_completed)
+    }
+  ];
+
+  // Recent activity (last 5 completed tasks)
+  const recentActivity = tasks
+    .filter(t => t.is_completed)
+    .sort((a, b) => (new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()))
+    .slice(0, 5)
+    .map(t => ({
+      task: t.task_name,
+      completed: timeAgo(t.updated_at || t.created_at)
+    }));
+
+  // Weekly Progress Chart (daily for the current week)
+  const daysOfWeek = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const weeklyProgress = daysOfWeek.map((day, idx) => {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + idx);
+    const all = tasks.filter(t => new Date(t.created_at).toDateString() === d.toDateString());
+    const completed = all.filter(t => t.is_completed);
+    return {
+      day,
+      completed: completed.length,
+      total: all.length
+    };
+  });
+
+  //// When loading: :
+  if (!isClient || loading || !user || tasksLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
         <div className="text-center">
@@ -80,13 +152,12 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            Welcome back, {mockUser.email?.split('@')[0]}! 👋
+            Welcome back, {user.email?.split("@")[0]}! 👋
           </h1>
           <p className="text-xl text-gray-600">
             Here's your cleaning journey overview
           </p>
         </div>
-
         {/* Main Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {/* Today's Progress */}
@@ -97,14 +168,14 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900">
-                {mockStats.todayTasks.completed}/{mockStats.todayTasks.total}
+                {todayTasks.filter(t => t.is_completed).length}/{todayTasks.length}
               </div>
-              <Progress 
-                value={(mockStats.todayTasks.completed / mockStats.todayTasks.total) * 100} 
+              <Progress
+                value={todayTasks.length ? (todayTasks.filter(t => t.is_completed).length / todayTasks.length) * 100 : 0}
                 className="mt-2"
               />
               <p className="text-xs text-gray-500 mt-2">
-                {Math.round((mockStats.todayTasks.completed / mockStats.todayTasks.total) * 100)}% complete
+                {todayTasks.length ? Math.round((todayTasks.filter(t => t.is_completed).length / todayTasks.length) * 100) : 0}% complete
               </p>
             </CardContent>
           </Card>
@@ -117,14 +188,14 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900">
-                {mockStats.weekTasks.completed}/{mockStats.weekTasks.total}
+                {weekTasks.filter(t => t.is_completed).length}/{weekTasks.length}
               </div>
-              <Progress 
-                value={(mockStats.weekTasks.completed / mockStats.weekTasks.total) * 100} 
+              <Progress
+                value={weekTasks.length ? (weekTasks.filter(t => t.is_completed).length / weekTasks.length) * 100 : 0}
                 className="mt-2"
               />
               <p className="text-xs text-gray-500 mt-2">
-                {Math.round((mockStats.weekTasks.completed / mockStats.weekTasks.total) * 100)}% complete
+                {weekTasks.length ? Math.round((weekTasks.filter(t => t.is_completed).length / weekTasks.length) * 100) : 0}% complete
               </p>
             </CardContent>
           </Card>
@@ -136,7 +207,7 @@ export default function DashboardPage() {
               <Flame className="h-4 w-4 text-orange-100" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{mockStats.streak} Days</div>
+              <div className="text-2xl font-bold">{streak} Days</div>
               <p className="text-xs text-orange-100 mt-2">Keep it burning! 🔥</p>
             </CardContent>
           </Card>
@@ -149,14 +220,14 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900">
-                {mockStats.monthTasks.completed}/{mockStats.monthTasks.total}
+                {monthTasks.filter(t => t.is_completed).length}/{monthTasks.length}
               </div>
-              <Progress 
-                value={(mockStats.monthTasks.completed / mockStats.monthTasks.total) * 100} 
+              <Progress
+                value={monthTasks.length ? (monthTasks.filter(t => t.is_completed).length / monthTasks.length) * 100 : 0}
                 className="mt-2"
               />
               <p className="text-xs text-gray-500 mt-2">
-                {Math.round((mockStats.monthTasks.completed / mockStats.monthTasks.total) * 100)}% complete
+                {monthTasks.length ? Math.round((monthTasks.filter(t => t.is_completed).length / monthTasks.length) * 100) : 0}% complete
               </p>
             </CardContent>
           </Card>
@@ -167,17 +238,17 @@ export default function DashboardPage() {
           <Card className="lg:col-span-2 bg-white shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
-                <TrendingUp className="h-5 w-5 text-blue-600" />
+                <Star className="h-5 w-5 text-blue-600" />
                 <span>Weekly Progress</span>
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {mockStats.weeklyProgress.map((day, index) => (
+                {weeklyProgress.map((day, index) => (
                   <div key={index} className="flex items-center space-x-4">
                     <div className="w-12 text-sm font-medium text-gray-600">{day.day}</div>
                     <div className="flex-1">
-                      <Progress value={(day.completed / day.total) * 100} className="h-3" />
+                      <Progress value={day.total ? (day.completed / day.total) * 100 : 0} className="h-3" />
                     </div>
                     <div className="text-sm text-gray-500 w-12">
                       {day.completed}/{day.total}
@@ -198,25 +269,28 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {mockStats.badges.map((badge) => (
-                  <div 
-                    key={badge.id} 
-                    className={`flex items-center space-x-3 p-3 rounded-lg border ${
-                      badge.earned 
-                        ? 'bg-yellow-50 border-yellow-200' 
-                        : 'bg-gray-50 border-gray-200 opacity-60'
-                    }`}
+                {badges.map((badge) => (
+                  <div
+                    key={badge.id}
+                    className={`flex items-center space-x-3 p-3 rounded-lg border ${badge.earned
+                      ? "bg-yellow-50 border-yellow-200"
+                      : "bg-gray-50 border-gray-200 opacity-60"
+                      }`}
                   >
                     <div className="text-2xl">{badge.icon}</div>
                     <div className="flex-1">
-                      <div className={`font-medium ${badge.earned ? 'text-gray-900' : 'text-gray-500'}`}>
+                      <div className={`font-medium ${badge.earned ? "text-gray-900" : "text-gray-500"}`}>
                         {badge.title}
                       </div>
-                      <div className={`text-xs ${badge.earned ? 'text-gray-600' : 'text-gray-400'}`}>
+                      <div className={`text-xs ${badge.earned ? "text-gray-600" : "text-gray-400"}`}>
                         {badge.description}
                       </div>
                     </div>
-                    {badge.earned && <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Earned</Badge>}
+                    {badge.earned && (
+                      <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                        Earned
+                      </Badge>
+                    )}
                   </div>
                 ))}
               </div>
@@ -234,7 +308,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {mockStats.recentActivity.map((activity, index) => (
+              {recentActivity.length === 0 ? (
+                <div className="text-center text-gray-400 py-8">No activity yet.</div>
+              ) : recentActivity.map((activity, index) => (
                 <div key={index} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
                   <CheckCircle2 className="h-5 w-5 text-green-500" />
                   <div className="flex-1">
@@ -249,8 +325,10 @@ export default function DashboardPage() {
 
         {/* Quick Actions */}
         <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                onClick={() => router.push('/')}>
+          <Card
+            className="bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+            onClick={() => router.push("/")}
+          >
             <CardContent className="p-6 text-center">
               <Home className="h-8 w-8 mx-auto mb-2" />
               <h3 className="font-semibold mb-1">Start Cleaning</h3>
@@ -258,8 +336,10 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                onClick={() => router.push('/blog')}>
+          <Card
+            className="bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+            onClick={() => router.push("/blog")}
+          >
             <CardContent className="p-6 text-center">
               <Star className="h-8 w-8 mx-auto mb-2" />
               <h3 className="font-semibold mb-1">Read Tips</h3>

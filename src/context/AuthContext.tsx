@@ -1,13 +1,12 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-// Note: We are NOT importing supabase here at the top level anymore.
-import type { Session, User, SupabaseClient } from '@supabase/supabase-js';
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import type { Session, User, SupabaseClient } from "@supabase/supabase-js";
 
 type AuthContextType = {
   user: User | null;
   session: Session | null;
-  supabase: SupabaseClient | null; // We can also pass the client through context
+  supabase: SupabaseClient | null;
   loading: boolean;
 };
 
@@ -20,45 +19,41 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // This function dynamically imports the supabase client
-    // and sets up the auth listener. This breaks the circular dependency.
+    let unsubscribe: (() => void) | undefined;
+
     const initializeAuth = async () => {
-      // THE FIX: Dynamically import supabase client inside useEffect
-      const { supabase: supabaseClient } = await import('@/lib/supabaseClient');
+      const { supabase: supabaseClient } = await import("@/lib/supabaseClient");
       setSupabase(supabaseClient);
 
-      // Fetch the initial session
+      // Get initial session
       const { data: { session } } = await supabaseClient.auth.getSession();
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
 
-      // Listen for auth state changes
-      const { data: authListener } = supabaseClient.auth.onAuthStateChange(
-        (event, session) => {
-          setSession(session);
-          setUser(session?.user ?? null);
-          setLoading(false);
-        }
-      );
+      // Subscribe to auth state changes
+      const { data: listener } = supabaseClient.auth.onAuthStateChange((event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        setLoading(false);
+      });
 
-      // Cleanup listener on component unmount
-      return () => {
-        authListener?.subscription.unsubscribe();
+      // Store the unsubscribe function
+      unsubscribe = () => {
+        listener.subscription.unsubscribe();
       };
     };
 
     initializeAuth();
+
+    // Cleanup on unmount
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
-  const value = {
-    user,
-    session,
-    supabase,
-    loading,
-  };
+  const value = { user, session, supabase, loading };
 
-  // Only render the application after the initial auth check is complete
   return (
     <AuthContext.Provider value={value}>
       {!loading && children}
@@ -69,7 +64,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };

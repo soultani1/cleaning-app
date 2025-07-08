@@ -3,19 +3,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import dynamic from 'next/dynamic';
+import { toast } from "sonner";
+import { motion, AnimatePresence } from "framer-motion";
 
-// Import UI components and icons
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from '@/context/AuthContext';
 import AuthButton from '@/components/AuthButton';
 import { Home, PawPrint, ArrowRight, Plus, Clock, Calendar, Star, CheckCircle2, Circle, Trash2, ArrowLeft, Sparkles, Timer } from 'lucide-react';
 
-// Dynamic import للمؤقت مع حل مشكلة Hydration
 const TaskTimer = dynamic(() => import('@/components/task-timer'), {
   ssr: false,
   loading: () => (
@@ -26,7 +24,6 @@ const TaskTimer = dynamic(() => import('@/components/task-timer'), {
   )
 });
 
-// --- Type Definition ---
 type Task = {
   id: number;
   created_at: string;
@@ -38,7 +35,6 @@ type Task = {
   user_id?: string | null;
 };
 
-// --- Child Component: TaskItem (الأصلي + المؤقت الإنجليزي) ---
 const TaskItem = ({ task, onToggle, onDelete }: { task: Task, onToggle: (id: number, status: boolean) => void, onDelete: (id: number) => void }) => {
   const [showTimer, setShowTimer] = useState(false);
 
@@ -60,7 +56,6 @@ const TaskItem = ({ task, onToggle, onDelete }: { task: Task, onToggle: (id: num
     }
   };
 
-  // دالة إكمال المهمة عند انتهاء المؤقت
   const handleTimerComplete = () => {
     if (!task.is_completed) {
       onToggle(task.id, task.is_completed);
@@ -70,7 +65,6 @@ const TaskItem = ({ task, onToggle, onDelete }: { task: Task, onToggle: (id: num
 
   return (
     <div className="space-y-4">
-      {/* المهمة الرئيسية */}
       <div className={`bg-white rounded-xl border ${task.is_completed ? 'border-gray-200 bg-gray-50' : 'border-gray-200'} hover:shadow-md transition-all duration-300 group`}>
         <div className="p-4">
           <div className="flex items-start justify-between gap-3">
@@ -93,8 +87,6 @@ const TaskItem = ({ task, onToggle, onDelete }: { task: Task, onToggle: (id: num
                       {task.frequency}
                     </span>
                   </div>
-                  
-                  {/* زر المؤقت - يظهر فقط للمهام غير المكتملة */}
                   {!task.is_completed && (
                     <button
                       onClick={() => setShowTimer(!showTimer)}
@@ -117,8 +109,6 @@ const TaskItem = ({ task, onToggle, onDelete }: { task: Task, onToggle: (id: num
           </div>
         </div>
       </div>
-
-      {/* المؤقت - يظهر تحت المهمة مع animation جميل */}
       {showTimer && !task.is_completed && (
         <div className="ml-6 animate-in slide-in-from-top-4 duration-300 ease-out">
           <TaskTimer 
@@ -132,7 +122,6 @@ const TaskItem = ({ task, onToggle, onDelete }: { task: Task, onToggle: (id: num
   );
 };
 
-// --- Parent Component: The Main Page (الأصلي) ---
 const CleaningPlanPage = () => {
   const { user } = useAuth();
   const router = useRouter();
@@ -145,6 +134,17 @@ const CleaningPlanPage = () => {
   const [loading, setLoading] = useState(true);
   const [newTaskName, setNewTaskName] = useState('');
   const [newTaskFrequency, setNewTaskFrequency] = useState('Daily');
+  const [newlyAddedTaskId, setNewlyAddedTaskId] = useState<number | null>(null);
+  const [filter, setFilter] = useState<'all' | 'completed' | 'active'>('all');
+
+  //filteredTasks :
+  const getFilteredTasks = (tasks: Task[]) => {
+  if (filter === 'completed') return tasks.filter(t => t.is_completed);
+  if (filter === 'active') return tasks.filter(t => !t.is_completed);
+  return tasks;
+};
+
+ 
 
   useEffect(() => {
     const fetchTasks = async () => {
@@ -165,10 +165,9 @@ const CleaningPlanPage = () => {
 
   const handleNext = (isRefilter = false) => {
     if (!isRefilter && (!homeSize || !hasPets)) {
-      alert("Please make both selections.");
+      toast.error("Please make both selections.");
       return;
     }
-    
     const filtered = allTasks.filter(task => 
       (task.home_size === "All" || task.home_size === homeSize) &&
       (task.has_pets === "All" || task.has_pets === hasPets)
@@ -179,10 +178,7 @@ const CleaningPlanPage = () => {
         if (grouped.hasOwnProperty(category)) grouped[category].push(task);
     }
     setDisplayedTasks(grouped);
-    
-    if (!isRefilter) {
-      setCurrentScreen('summary');
-    }
+    if (!isRefilter) setCurrentScreen('summary');
   };
 
   useEffect(() => {
@@ -195,15 +191,35 @@ const CleaningPlanPage = () => {
     setCurrentScreen('selection');
   };
 
-  const deleteTask = async (taskId: number) => {
-    const originalTasks = [...allTasks];
-    setAllTasks(prev => prev.filter(t => t.id !== taskId));
-    const { error } = await supabase.from('tasks').delete().eq('id', taskId);
-    if (error) {
-      console.error("Error deleting task:", error.message);
-      setAllTasks(originalTasks);
+ const deleteTask = async (taskId: number) => {
+  // Show toast confirmation BEFORE actually deleting!
+  toast(
+    "Are you sure you want to delete this task?",
+    {
+      description: "This action cannot be undone.",
+      action: {
+        label: "Delete",
+        onClick: async () => {
+          const originalTasks = [...allTasks];
+          setAllTasks(prev => prev.filter(t => t.id !== taskId));
+          const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+          if (error) {
+            setAllTasks(originalTasks);
+            toast.error("Failed to delete the task.");
+          } else {
+            toast.success("Task deleted successfully!");
+          }
+        },
+      
+      },
+      cancel: {
+        label: "Cancel",
+      },
+      
     }
-  };
+  );
+};
+
 
   const toggleTask = async (taskId: number, currentStatus: boolean) => {
     const newStatus = !currentStatus;
@@ -212,13 +228,38 @@ const CleaningPlanPage = () => {
     if (error) {
       console.error("Error updating task:", error.message);
       setAllTasks(prev => prev.map(t => (t.id === taskId ? { ...t, is_completed: currentStatus } : t)));
+      toast.error("Failed to update the task.");
+    } else {
+      if (newStatus) {
+        toast.success("Task completed! 🎉");
+      } else {
+        toast("Task marked as not completed.");
+      }
     }
   };
 
   const addTask = async () => {
     if (!newTaskName.trim()) return;
     if (!user) {
-      if (window.confirm("Create a free account to save your tasks permanently?")) router.push('/signup');
+      toast(
+        <div>
+          <div className="font-medium text-gray-900 dark:text-white">
+            Create a free account to save your tasks permanently!
+          </div>
+          <div className="text-gray-600 dark:text-gray-300 mt-1">
+            Sign up to access all features and save your cleaning plan.
+          </div>
+        </div>,
+        {
+          action: {
+            label: "Sign Up",
+            onClick: () => router.push('/signup'),
+          },
+          cancel: {
+            label: "Cancel",
+          },
+        }
+      );
       return;
     }
     const newTaskForDb = { 
@@ -232,10 +273,13 @@ const CleaningPlanPage = () => {
     const { data: newDbTask, error } = await supabase.from('tasks').insert(newTaskForDb).select().single();
     if (error) {
       console.error("Error adding task:", error);
-      alert("Failed to add the task.");
+      toast.error("Failed to add the task.");
     } else if (newDbTask) {
       setAllTasks(prev => [...prev, newDbTask as Task]);
       setNewTaskName('');
+      setNewlyAddedTaskId(newDbTask.id);
+      toast.success("Task added successfully!");
+      setTimeout(() => setNewlyAddedTaskId(null), 900);
     }
   };
 
@@ -305,23 +349,62 @@ const CleaningPlanPage = () => {
               </div>
             </div>
           </div>
-          <div className="space-y-8 mb-8">
-            {Object.entries(displayedTasks).map(([category, tasks]) =>
-              tasks.length > 0 && (
-                <div key={category}>
-                  <h3 className="text-lg font-semibold text-gray-900 capitalize mb-4 flex items-center gap-2">
-                    {category === 'daily' && <Clock className="w-5 h-5 text-blue-600" />}
-                    {category === 'weekly' && <Calendar className="w-5 h-5 text-emerald-600" />}
-                    {category === 'monthly' && <Star className="w-5 h-5 text-purple-600" />}
-                    {category} Tasks
-                  </h3>
-                  <div className="space-y-4">
-                    {tasks.map((task) => <TaskItem key={task.id} task={task} onToggle={toggleTask} onDelete={deleteTask} />)}
-                  </div>
-                </div>
-              )
-            )}
-          </div>
+      
+
+<div className="space-y-8 mb-8">
+  <div className="flex gap-2 mb-6">
+  <button
+    className={`px-3 py-1 rounded transition-all font-semibold text-sm
+      ${filter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800 hover:bg-blue-50'}`}
+    onClick={() => setFilter('all')}
+  >
+    All
+  </button>
+  <button
+    className={`px-3 py-1 rounded transition-all font-semibold text-sm
+      ${filter === 'completed' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-800 hover:bg-green-50'}`}
+    onClick={() => setFilter('completed')}
+  >
+    Completed
+  </button>
+  <button
+    className={`px-3 py-1 rounded transition-all font-semibold text-sm
+      ${filter === 'active' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-800 hover:bg-purple-50'}`}
+    onClick={() => setFilter('active')}
+  >
+    Active
+  </button>
+ </div>
+</div>
+
+{Object.entries(displayedTasks).map(([category, tasks]) =>
+  getFilteredTasks(tasks).length > 0 && (
+    <div key={category}>
+      <h3 className="text-lg font-semibold text-gray-900 capitalize mb-4 flex items-center gap-2">
+        {category === 'daily' && <Clock className="w-5 h-5 text-blue-600" />}
+        {category === 'weekly' && <Calendar className="w-5 h-5 text-emerald-600" />}
+        {category === 'monthly' && <Star className="w-5 h-5 text-purple-600" />}
+        {category} Tasks
+      </h3>
+      <div className="space-y-4">
+        <AnimatePresence>
+          {getFilteredTasks(tasks).map((task) => (
+            <motion.div
+              key={task.id}
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              transition={{ duration: 0.45, type: "spring", stiffness: 220 }}
+            >
+              <TaskItem task={task} onToggle={toggleTask} onDelete={deleteTask} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+)}
+
           <div className="bg-white rounded-2xl shadow-lg p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Custom Task</h3>
             <div className="flex flex-col sm:flex-row gap-3">

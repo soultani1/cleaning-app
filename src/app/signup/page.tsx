@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import supabase from "@/lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,54 +11,35 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function SignUp() {
-  // State management for form fields and feedback
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  
   const router = useRouter();
 
-  /**
-   * Handle the sign up process with Supabase authentication
-   */
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate inputs
     if (!email || !password) {
       setMessage({ type: "error", text: "Please enter both email and password" });
       return;
     }
-    
-    // Password strength check
     if (password.length < 8) {
       setMessage({ type: "error", text: "Password must be at least 8 characters long" });
       return;
     }
-    
     try {
       setIsLoading(true);
       setMessage(null);
-      
-      // Call Supabase auth API to create new user
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
       });
-      
-      if (error) {
-        throw error;
-      }
-      
-      // Check if user was created successfully
+      if (error) throw error;
       if (data?.user) {
         setMessage({
           type: "success",
           text: "Success! Please check your email for the confirmation link.",
         });
-        
-        // Clear the form
         setEmail("");
         setPassword("");
       }
@@ -81,7 +62,6 @@ export default function SignUp() {
             Enter your email and password to sign up
           </CardDescription>
         </CardHeader>
-        
         <CardContent>
           <form onSubmit={handleSignUp} className="space-y-4">
             {message && (
@@ -91,7 +71,6 @@ export default function SignUp() {
                 </AlertDescription>
               </Alert>
             )}
-            
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -103,7 +82,6 @@ export default function SignUp() {
                 required
               />
             </div>
-            
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <Input
@@ -115,7 +93,6 @@ export default function SignUp() {
                 required
               />
             </div>
-            
             <Button
               type="submit"
               className="w-full"
@@ -125,7 +102,6 @@ export default function SignUp() {
             </Button>
           </form>
         </CardContent>
-        
         <CardFooter className="flex justify-center">
           <p className="text-sm text-gray-500">
             Already have an account?{" "}
